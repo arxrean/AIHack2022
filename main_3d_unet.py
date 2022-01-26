@@ -71,8 +71,8 @@ if __name__ == '__main__':
         if val_loss < best_loss:
             best_model_param = model.state_dict()
             best_loss = val_loss
-
-        wandb.log({'epoch_loss': val_loss})
+        if opt.log:
+            wandb.log({'epoch_loss': val_loss})
 
     model.load_state_dict(best_model_param)
     single_test(opt, model, test_loader, get_loss_func, optimizer, scheduler)

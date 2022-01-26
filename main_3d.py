@@ -19,6 +19,10 @@ from sklearn.metrics import f1_score, accuracy_score, precision_score, recall_sc
 from sklearn.metrics.pairwise import euclidean_distances
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 
+import scipy.stats
+import scipy.signal
+import scipy.optimize
+
 import torchvision.transforms as transforms
 from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
@@ -69,9 +73,12 @@ def get_parser():
 	parser.add_argument('--plot_num', type=int, default=5)
 	parser.add_argument('--loss05', type=float, default=0)
 	parser.add_argument('--loss_peak', type=float, default=0)
+	parser.add_argument('--loss_len', type=float, default=0)
 
 	# model
 	parser.add_argument('--backbone', type=str, default='resnet18')
+	parser.add_argument('--activation', type=str, default='empty')
+	parser.add_argument('--scope', type=float, default=2.5)
 	parser.add_argument('--unet_atten', action='store_true')
 
 	opt = parser.parse_args()
@@ -80,22 +87,23 @@ def get_parser():
 
 
 def get_loss_func(opt, outs, labels):
-    loss = nn.MSELoss()(outs, labels)
-    if opt.loss05 != 0:
-        loss += opt.loss05*torch.abs(0.5-outs.reshape(outs.size(0), -1).mean(1)).mean()
-    # loss for uni peak
-    # regression (tensor(1.1150e+17, device='cuda:0', grad_fn=<MseLossBackward0>)) or index
-    # first value really large?
-    # not sharp enough
+	loss_mse = nn.MSELoss()(outs, labels)
+	loss05 = 0
+	if opt.loss05 != 0:
+		loss05 = opt.loss05*torch.abs(0.5-outs.reshape(outs.size(0), -1).mean(1)).mean()
+		
+	loss_peak = 0
+	if opt.loss_peak != 0:
+		preds = torch.stack([get_structure_factor_torch(opt, x[0])[1][1:] for x in outs])
+		gts = torch.stack([get_structure_factor_torch(opt, x[0])[1][1:] for x in labels])
+		loss_peak = opt.loss_peak * torch.abs(torch.argmax(preds, 1).float()-torch.argmax(gts, 1).float()).mean() 
+		# loss += opt.loss_peak * torch.log(nn.MSELoss()(preds, gts)+1e-5)
 
-    # label: 0.1, 0.1, 0.05, 0.7, 0.2, 0.1
-    # pred: 0.1, 0.8, 0.01, 0.1, 0.05, 0.08 1.1150e+17 -> logx*0.01
-    if opt.loss_peak != 0:
-    	preds = torch.stack([get_structure_factor_torch(opt, x[0])[1] for x in outs])
-    	gts = torch.stack([get_structure_factor_torch(opt, x[0])[1] for x in labels])
-    	loss += opt.loss_peak * torch.abs(torch.argmax(preds, 1).float()-torch.argmax(gts, 1).float()).mean()
+	if opt.loss_len != 0:
+		preds = torch.stack([get_correlation_length_torch(tuple(get_structure_factor_torch(opt, x[0]))) for x in outs])
+		gts = torch.stack([get_correlation_length_torch(tuple(get_structure_factor_torch(opt, x[0]))) for x in labels])
 
-    return loss
+	return loss_mse, loss05, loss_peak
 
 
 def plot_pairs(opt, inputs, preds, gts):
@@ -164,54 +172,107 @@ def unpad_input(opt, outs, labels, crop_sizes, mode='train'):
 
 
 def get_structure_factor(data, N=100):
-    hat_data = np.fft.fftn(data)
-    hat_data = np.fft.fftshift(hat_data)
-    hat_data = np.abs(hat_data**2)
-    # pdb.set_trace()
-    center = np.asarray(data.shape)/2
-    idx = np.indices(data.shape)
-    q = np.sqrt(np.sum((idx - center[:, np.newaxis, np.newaxis, np.newaxis])**2, axis=0))
-    max_q = np.max(q)
+	hat_data = np.fft.fftn(data)
+	hat_data = np.fft.fftshift(hat_data)
+	hat_data = np.abs(hat_data**2)
+	# pdb.set_trace()
+	center = np.asarray(data.shape)/2
+	idx = np.indices(data.shape)
+	q = np.sqrt(np.sum((idx - center[:, np.newaxis, np.newaxis, np.newaxis])**2, axis=0))
+	max_q = np.max(q)
 
-    q_array = np.linspace(0, max_q, N+1)
-    sq_array = np.zeros(N)
+	q_array = np.linspace(0, max_q, N+1)
+	sq_array = np.zeros(N)
 
 
-    for i in range(len(sq_array)):
-        sq_array[i] = np.mean(hat_data[np.logical_and(q_array[i] <= q, q <= q_array[i+1])])
+	for i in range(len(sq_array)):
+		sq_array[i] = np.mean(hat_data[np.logical_and(q_array[i] <= q, q <= q_array[i+1])])
 
-    q_array = q_array[:-1] # + (q_array[1]-q_array[0])/2
-    pdb.set_trace()
+	q_array = q_array[:-1] # + (q_array[1]-q_array[0])/2
+	pdb.set_trace()
 
-    # 64x64x64
-    # label: 0.1, 0.1, 0.05, 0.7, 0.2, 0.1  3 
-    # pred: 0.1, 0.8, 0.01, 0.1, 0.05, 0.08 1 -> 2
-    return None, sq_array
+	# 64x64x64
+	# label: 0.1, 0.1, 0.05, 0.7, 0.2, 0.1  3 
+	# pred: 0.1, 0.8, 0.01, 0.1, 0.05, 0.08 1 -> 2
+	return q_array, sq_array
 
 
 def get_structure_factor_torch(opt, data, N=100):
-    hat_data = torch.fft.fftn(data)
-    hat_data = torch.fft.fftshift(hat_data)
-    hat_data = torch.abs(hat_data**2)
+	hat_data = torch.fft.fftn(data)
+	hat_data = torch.fft.fftshift(hat_data)
+	hat_data = torch.abs(hat_data**2)
 
-    _data = data.detach().cpu().numpy()
-    center = np.asarray(data.shape)/2
-    idx = np.indices(_data.shape)
-    q = np.sqrt(np.sum((idx - center[:, np.newaxis, np.newaxis, np.newaxis])**2, axis=0))
-    max_q = np.max(q)
+	_data = data.detach().cpu().numpy()
+	center = np.asarray(data.shape)/2
+	idx = np.indices(_data.shape)
+	q = np.sqrt(np.sum((idx - center[:, np.newaxis, np.newaxis, np.newaxis])**2, axis=0))
+	max_q = np.max(q)
 
-    q = torch.tensor(q)
-    q_array = torch.tensor(np.linspace(0, max_q, N+1))
-    if opt.gpu:
-    	q, q_array = q.cuda(), q_array.cuda()
-    # sq_array = np.zeros(N)
-    sq_array = torch.zeros(N).cuda() if opt.gpu else torch.zeros(N)
+	q = torch.tensor(q)
+	q_array = torch.tensor(np.linspace(0, max_q, N+1))
+	if opt.gpu:
+		q, q_array = q.cuda(), q_array.cuda()
+	# sq_array = np.zeros(N)
+	sq_array = torch.zeros(N).cuda() if opt.gpu else torch.zeros(N)
 
-    for i in range(len(sq_array)):
-        sq_array[i] = torch.mean(hat_data[torch.logical_and(q_array[i] <= q, q <= q_array[i+1])])
+	for i in range(len(sq_array)):
+		sq_array[i] = torch.mean(hat_data[torch.logical_and(q_array[i] <= q, q <= q_array[i+1])])
 
-    q_array = q_array[:-1] # + (q_array[1]-q_array[0])/2
-    return q_array, sq_array[1:]
+	q_array = q_array[:-1] # + (q_array[1]-q_array[0])/2
+	return q_array, sq_array
+
+
+def get_correlation_length(q, sq, plot_name=None):
+	gr = np.fft.irfft(sq)
+	gr = (gr[:gr.shape[0]//2] + np.flip(gr[gr.shape[0]//2:]))/2
+
+	gr -= np.mean(gr)
+	r = np.linspace(0, np.max(1/q[1:]), gr.shape[0])
+
+	max_idx = scipy.signal.argrelextrema(gr, np.less)[0]
+	popt, pcov = scipy.optimize.curve_fit(exp_decay, r[max_idx], gr[max_idx], p0=(-3e5, 10))
+
+	if plot_name:
+		fig, ax = plt.subplots()
+		ax.set_xlabel("$r$ [arb. units]")
+		ax.set_ylabel("$g(r)$ [arb. units]")
+
+		ax.plot(r, gr, "o", label="data")
+		ax.plot(r[max_idx], gr[max_idx], "o", label="max.")
+		ax.plot(r, exp_decay(r, *popt), label="fit")
+		ax.legend(loc="best")
+
+		fig.savefig(plot_name, transparent=True, bbox_inches='tight', pad_inches=0)
+		plt.close(fig)
+	return popt[1]
+
+
+def get_correlation_length_torch(inputs, plot_name=None):
+	pdb.set_trace()
+	q, sq = inputs[0].cpu().numpy(), inputs[1]
+	gr = torch.fft.irfft(sq)
+	gr = (gr[:gr.shape[0]//2] + torch.flip(gr[gr.shape[0]//2:], dims=(0,)))/2
+
+	gr = gr - gr.mean()
+	r = np.linspace(0, np.max(1/q[1:]), gr.shape[0])
+
+	max_idx = scipy.signal.argrelextrema(gr, torch.less)[0]
+	popt, pcov = scipy.optimize.curve_fit(exp_decay, r[max_idx], gr[max_idx], p0=(-3e5, 10))
+
+	if plot_name:
+		fig, ax = plt.subplots()
+		ax.set_xlabel("$r$ [arb. units]")
+		ax.set_ylabel("$g(r)$ [arb. units]")
+
+		ax.plot(r, gr, "o", label="data")
+		ax.plot(r[max_idx], gr[max_idx], "o", label="max.")
+		ax.plot(r, exp_decay(r, *popt), label="fit")
+		ax.legend(loc="best")
+
+		fig.savefig(plot_name, transparent=True, bbox_inches='tight', pad_inches=0)
+		plt.close(fig)
+
+	return popt[1]
 
 
 def single_train(opt, model, loader, loss_func, optimizer, scheduler):
@@ -223,7 +284,12 @@ def single_train(opt, model, loader, loss_func, optimizer, scheduler):
 		outs, labels = unpad_input(opt, model(
 			images), labels, crop_sizes, 'train')
 		# get_structure_factor(labels.cpu().numpy()[0, 0])
-		loss = loss_func(opt, outs, labels)
+		loss_mse, loss05, loss_peak = loss_func(opt, outs, labels)
+		loss = loss_mse
+		if opt.loss05:
+			loss += loss05
+		if opt.loss_peak:
+			loss += loss_peak
 
 		optimizer.zero_grad()
 		loss.backward()
@@ -231,6 +297,11 @@ def single_train(opt, model, loader, loss_func, optimizer, scheduler):
 		scheduler.step()
 		if opt.log:
 			wandb.log({'train_loss': loss.item()})
+			wandb.log({'train_loss_mse': loss_mse.item()})
+			if opt.loss05: 
+				wandb.log({'train_loss05': loss05.item()})
+			if opt.loss_peak:
+				wandb.log({'train_loss_peak': loss_peak.item()})
 
 	return model
 
@@ -245,10 +316,20 @@ def single_val(opt, model, loader, loss_func, optimizer, scheduler):
 				images, labels = images.float().cuda(), labels.float().cuda()
 			outs, labels = unpad_input(opt, model(
 				images), labels, crop_sizes, 'val')
-			loss = loss_func(opt, outs, labels).item()
-			_loss += loss
+			loss_mse, loss05, loss_peak = loss_func(opt, outs, labels)
+			loss = loss_mse
+			if opt.loss05:
+				loss += loss05
+			if opt.loss_peak:
+				loss += loss_peak
+			_loss += loss.item()
 			if opt.log:
-				wandb.log({'val_loss': loss})
+				wandb.log({'val_loss': loss.item()})
+				wandb.log({'val_loss_mse': loss_mse.item()})
+				if opt.loss05: 
+					wandb.log({'val_loss05': loss05.item()})
+				if opt.loss_peak:
+					wandb.log({'val_loss_peak': loss_peak.item()})
 
 	return _loss/len(loader)
 
@@ -385,6 +466,7 @@ class Conv3dCustom(torch.nn.Module):
 		self.add_module("conv_unit", seq)
 
 	def forward(self, inputs):
+		pdb.set_trace()
 		x = inputs
 		return self.conv_unit(x)
 

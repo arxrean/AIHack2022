@@ -881,6 +881,8 @@ class UNet(nn.Module):
         # Uncomment the following line to temporarily store output for
         #  receptive field estimation using fornoxai/receptivefield:
         # self.feature_maps = [x]  # Currently disabled to save memory
+        if self.opt.activation != 'empty':
+            x = self.use_activation(x)
         return x
 
     @torch.jit.unused
@@ -899,8 +901,14 @@ class UNet(nn.Module):
             x = checkpoint(module, before_pool, x)
             i += 1
         x = self.conv_final(x)
-        # self.feature_maps = [x]  # Currently disabled to save memory
+
         return x
+
+    def use_activation(self, x):
+        if self.opt.activation == 'sigmoid':
+            return torch.sigmoid(x) * self.opt.scope
+
+        raise
 
 
 def test_model(
