@@ -13,6 +13,7 @@ from scipy.special import softmax
 from PIL import Image
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
+from fast_ml.model_development import train_valid_test_split
 
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import f1_score, accuracy_score, precision_score, recall_score
@@ -54,8 +55,8 @@ def get_parser():
 						default=5)
 
 	# data
-	parser.add_argument('--train_test_ratio', type=float, default=0.2)
-	parser.add_argument('--train_val_ratio', type=float, default=0.2)
+	parser.add_argument('--train_test_ratio', type=float, default=0.04)
+	parser.add_argument('--train_val_ratio', type=float, default=0.1)
 	parser.add_argument('--train_frac', type=float, default=1.0)
 	parser.add_argument('--warm_up_split', type=int, default=5)
 	parser.add_argument('--img_size', type=int, default=64)
@@ -248,7 +249,6 @@ def get_correlation_length(q, sq, plot_name=None):
 
 
 def get_correlation_length_torch(inputs, plot_name=None):
-	pdb.set_trace()
 	q, sq = inputs[0].cpu().numpy(), inputs[1]
 	gr = torch.fft.irfft(sq)
 	gr = (gr[:gr.shape[0]//2] + torch.flip(gr[gr.shape[0]//2:], dims=(0,)))/2
@@ -412,12 +412,11 @@ class RegDataset(torch.utils.data.Dataset):
 
 		img_size, label_size = curr.shape[-1], label.shape[-1]
 		assert img_size == label_size
-
 		if self.opt.aug and self.mode == 'train':
 			dims = tuple(sorted(np.random.choice(3, np.random.randint(0, 4), replace=False)))
 			if len(dims) > 0:
-				curr = np.flip(curr, dims)
-				label = np.flip(label, dims)
+				curr = np.flip(curr, dims).copy()
+				label = np.flip(label, dims).copy()
 
 		if self.opt.pad_size != img_size:
 			assert (self.opt.pad_size - img_size) % 2 == 0
