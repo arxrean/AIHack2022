@@ -91,7 +91,7 @@ def get_loss_func(opt, outs, labels):
 	loss05 = 0
 	if opt.loss05 != 0:
 		loss05 = opt.loss05*torch.abs(0.5-outs.reshape(outs.size(0), -1).mean(1)).mean()
-		
+
 	loss_peak = 0
 	if opt.loss_peak != 0:
 		preds = torch.stack([get_structure_factor_torch(opt, x[0])[1][1:] for x in outs])
@@ -405,8 +405,6 @@ class RegDataset(torch.utils.data.Dataset):
 	def __getitem__(self, idx):
 		curr = self.h5_prev[self.data[idx]]
 		label = self.h5_curr[self.data[idx]]
-		curr = curr.reshape([1]+list(curr.shape))
-		label = label.reshape([1]+list(label.shape))
 
 		if self.opt.data_norm:
 			curr = (curr-self.mean)/self.std
@@ -416,13 +414,10 @@ class RegDataset(torch.utils.data.Dataset):
 		assert img_size == label_size
 
 		if self.opt.aug and self.mode == 'train':
-			crop_size = random.choice([16, 32, 64])
-			if crop_size < img_size:
-				top_left = [random.randint(0, img_size-crop_size)
-							for _ in range(3)]
-				curr = curr[:, top_left[0]:top_left[0]+crop_size, top_left[1]:top_left[1]+crop_size, top_left[2]:top_left[2]+crop_size]
-				label = label[:, top_left[0]:top_left[0]+crop_size, top_left[1]:top_left[1]+crop_size, top_left[2]:top_left[2]+crop_size]
-				img_size = crop_size
+			dims = tuple(sorted(np.random.choice(3, np.random.randint(0, 4), replace=False)))
+			if len(dims) > 0:
+				curr = np.flip(curr, dims)
+				label = np.flip(label, dims)
 
 		if self.opt.pad_size != img_size:
 			assert (self.opt.pad_size - img_size) % 2 == 0
@@ -432,6 +427,8 @@ class RegDataset(torch.utils.data.Dataset):
 			label = np.pad(label, ((0, 0), (pad2, pad2), (pad2, pad2),
 								   (pad2, pad2)), 'constant')
 
+		curr = curr.reshape([1]+list(curr.shape))
+		label = label.reshape([1]+list(label.shape))
 		return curr, label, img_size
 
 
