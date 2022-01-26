@@ -25,42 +25,33 @@ import torch
 import torchvision
 from transformers import BertTokenizerFast as BertTokenizer, BertModel, AdamW, get_linear_schedule_with_warmup
 
-from main_3d import get_parser, data_split, RegDataset, LeftModel, single_train, single_val, single_test, Conv3dCustom
+from main_3d import get_parser, data_split, RegDataset, LeftModel, single_train, single_val, single_test, Conv3dCustom, get_loss_func
 from unet import UNet
 
 
 if __name__ == '__main__':
     opt = get_parser()
     if opt.log:
-        wandb.init(project="AIHack")
+        wandb.init(project="AIHack", name=opt.name)
         wandb.config.update(opt)
 
-    data = np.loadtxt(opt.txt_path).transpose().reshape(-1, 1, 64, 64, 64)
-    data = np.array([data[i:i+2] for i in range(len(data)-1)])
-    data2 = [np.loadtxt(x).transpose().reshape(-1, 1, 64, 64, 64)
-             for x in glob.glob('./dataset/addtional_data/*/density3d.txt')]
-    data2_pair = []
-    for d in data2:
-        for i in range(len(d)-1):
-            data2_pair.append(d[i:i+2])
-    data = np.concatenate((np.array(data2_pair), data), 0)
+    data = np.arange(opt.h5_size)
 
     train, val, test = data_split(opt, data)
 
     train_set, val_set, test_set = RegDataset(opt, train, 'train'), RegDataset(
         opt, val, 'val'), RegDataset(opt, test, 'test')
-    val_set.mean, val_set.std = train_set.mean, train_set.std
-    test_set.mean, test_set.std = train_set.mean, train_set.std
+    if opt.data_norm:
+        val_set.mean, val_set.std = train_set.mean, train_set.std
+        test_set.mean, test_set.std = train_set.mean, train_set.std
     train_loader, val_loader, test_loader = DataLoader(train_set, batch_size=opt.batch_size, shuffle=True, num_workers=opt.num_workers, drop_last=True), \
         DataLoader(val_set, batch_size=opt.batch_size, shuffle=False, num_workers=opt.num_workers, drop_last=True), \
         DataLoader(test_set, batch_size=opt.batch_size,
                    shuffle=False, num_workers=opt.num_workers)
 
-    model = UNet(opt)
+    model = UNet(opt, attention=opt.unet_atten)
     if opt.gpu:
         model = model.cuda()
-
-    loss_func = nn.MSELoss()
 
     optimizer = AdamW(model.parameters(), lr=opt.lr,
                        weight_decay=opt.weight_decay)
@@ -75,8 +66,8 @@ if __name__ == '__main__':
 
     best_model_param, best_loss = None, 1e5
     for epoch in range(opt.epoches):
-        model = single_train(opt, model, train_loader, loss_func, optimizer, scheduler)
-        val_loss = single_val(opt, model, val_loader, loss_func, optimizer, scheduler)
+        model = single_train(opt, model, train_loader, get_loss_func, optimizer, scheduler)
+        val_loss = single_val(opt, model, val_loader, get_loss_func, optimizer, scheduler)
         if val_loss < best_loss:
             best_model_param = model.state_dict()
             best_loss = val_loss
@@ -84,4 +75,4 @@ if __name__ == '__main__':
         wandb.log({'epoch_loss': val_loss})
 
     model.load_state_dict(best_model_param)
-    single_test(opt, model, test_loader, loss_func, optimizer, scheduler)
+    single_test(opt, model, test_loader, get_loss_func, optimizer, scheduler)

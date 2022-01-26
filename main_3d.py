@@ -3,7 +3,9 @@ import pdb
 import glob
 import copy
 import wandb
+import h5py
 import random
+import string
 import argparse
 import pandas as pd
 import numpy as np
@@ -30,7 +32,7 @@ from transformers import BertTokenizerFast as BertTokenizer, BertModel, AdamW, g
 
 def get_parser():
 	parser = argparse.ArgumentParser()
-	parser.add_argument('--name', type=str, default='tmp')
+	parser.add_argument('--name', type=str, default=''.join(random.choice(string.ascii_lowercase) for i in range(10)))
 	parser.add_argument('--seed', type=int, default=7)
 	parser.add_argument('--gpu', action='store_true')
 	parser.add_argument('--gpus', action='store_true')
@@ -40,6 +42,12 @@ def get_parser():
 
 	parser.add_argument('--txt_path', type=str,
 						default='./dataset/simulation/3d/density3d.txt')
+	parser.add_argument('--h5_path', type=str,
+						default='./dataset/data.h5')
+	parser.add_argument('--h5_size', type=int,
+						default=1248)
+	parser.add_argument('--h5_time', type=int,
+						default=5)
 
 	# data
 	parser.add_argument('--train_test_ratio', type=float, default=0.2)
@@ -59,16 +67,38 @@ def get_parser():
 	parser.add_argument('--weight_decay', type=float, default=2e-5)
 	parser.add_argument('--dropout', type=float, default=0)
 	parser.add_argument('--plot_num', type=int, default=5)
+	parser.add_argument('--loss05', type=float, default=0)
+	parser.add_argument('--loss_peak', type=float, default=0)
 
 	# model
 	parser.add_argument('--backbone', type=str, default='resnet18')
+	parser.add_argument('--unet_atten', action='store_true')
 
 	opt = parser.parse_args()
 
 	return opt
 
 
-def plot_pairs(inputs, preds, gts):
+def get_loss_func(opt, outs, labels):
+    loss = nn.MSELoss()(outs, labels)
+    if opt.loss05 != 0:
+        loss += opt.loss05*torch.abs(0.5-outs.reshape(outs.size(0), -1).mean(1)).mean()
+    # loss for uni peak
+    # regression (tensor(1.1150e+17, device='cuda:0', grad_fn=<MseLossBackward0>)) or index
+    # first value really large?
+    # not sharp enough
+
+    # label: 0.1, 0.1, 0.05, 0.7, 0.2, 0.1
+    # pred: 0.1, 0.8, 0.01, 0.1, 0.05, 0.08 1.1150e+17 -> logx*0.01
+    if opt.loss_peak != 0:
+    	preds = torch.stack([get_structure_factor_torch(opt, x[0])[1] for x in outs])
+    	gts = torch.stack([get_structure_factor_torch(opt, x[0])[1] for x in labels])
+    	loss += opt.loss_peak * torch.abs(torch.argmax(preds, 1).float()-torch.argmax(gts, 1).float()).mean()
+
+    return loss
+
+
+def plot_pairs(opt, inputs, preds, gts):
 	for i in range(len(inputs)):
 		fig = plt.figure()
 		ax = fig.add_subplot(1, 3, 1, projection='3d')
@@ -92,14 +122,17 @@ def plot_pairs(inputs, preds, gts):
 		g = gts[i].reshape(-1, 1)
 		ax.scatter(x, y, z, c=g, cmap='viridis', linewidth=0.5)
 
-		plt.savefig('./save/imgs/test_plots_{}.png'.format(i), dpi=800)
+		folder = './save/{}/imgs'.format(opt.name)
+		if not os.path.exists(folder):
+			os.makedirs(folder)
+		plt.savefig(os.path.join(folder, 'test_plots_{}.png'.format(i)), dpi=800)
 		plt.close()
 
 
 def data_split(opt, data):
 	train, test = train_test_split(
 		data, test_size=opt.train_test_ratio, random_state=42)
-	train, val = train_test_split(train, test_size=opt.train_val_ratio)
+	train, val = train_test_split(train, test_size=opt.train_val_ratio, random_state=42)
 
 	return train, val, test
 
@@ -130,6 +163,57 @@ def unpad_input(opt, outs, labels, crop_sizes, mode='train'):
 	return outs_new, labels_new
 
 
+def get_structure_factor(data, N=100):
+    hat_data = np.fft.fftn(data)
+    hat_data = np.fft.fftshift(hat_data)
+    hat_data = np.abs(hat_data**2)
+    # pdb.set_trace()
+    center = np.asarray(data.shape)/2
+    idx = np.indices(data.shape)
+    q = np.sqrt(np.sum((idx - center[:, np.newaxis, np.newaxis, np.newaxis])**2, axis=0))
+    max_q = np.max(q)
+
+    q_array = np.linspace(0, max_q, N+1)
+    sq_array = np.zeros(N)
+
+
+    for i in range(len(sq_array)):
+        sq_array[i] = np.mean(hat_data[np.logical_and(q_array[i] <= q, q <= q_array[i+1])])
+
+    q_array = q_array[:-1] # + (q_array[1]-q_array[0])/2
+    pdb.set_trace()
+
+    # 64x64x64
+    # label: 0.1, 0.1, 0.05, 0.7, 0.2, 0.1  3 
+    # pred: 0.1, 0.8, 0.01, 0.1, 0.05, 0.08 1 -> 2
+    return None, sq_array
+
+
+def get_structure_factor_torch(opt, data, N=100):
+    hat_data = torch.fft.fftn(data)
+    hat_data = torch.fft.fftshift(hat_data)
+    hat_data = torch.abs(hat_data**2)
+
+    _data = data.detach().cpu().numpy()
+    center = np.asarray(data.shape)/2
+    idx = np.indices(_data.shape)
+    q = np.sqrt(np.sum((idx - center[:, np.newaxis, np.newaxis, np.newaxis])**2, axis=0))
+    max_q = np.max(q)
+
+    q = torch.tensor(q)
+    q_array = torch.tensor(np.linspace(0, max_q, N+1))
+    if opt.gpu:
+    	q, q_array = q.cuda(), q_array.cuda()
+    # sq_array = np.zeros(N)
+    sq_array = torch.zeros(N).cuda() if opt.gpu else torch.zeros(N)
+
+    for i in range(len(sq_array)):
+        sq_array[i] = torch.mean(hat_data[torch.logical_and(q_array[i] <= q, q <= q_array[i+1])])
+
+    q_array = q_array[:-1] # + (q_array[1]-q_array[0])/2
+    return q_array, sq_array[1:]
+
+
 def single_train(opt, model, loader, loss_func, optimizer, scheduler):
 	model = model.train()
 	for step, pack in enumerate(loader):
@@ -138,9 +222,8 @@ def single_train(opt, model, loader, loss_func, optimizer, scheduler):
 			images, labels = images.float().cuda(), labels.float().cuda()
 		outs, labels = unpad_input(opt, model(
 			images), labels, crop_sizes, 'train')
-		loss = 0
-		for out, label in zip(outs, labels):
-			loss += loss_func(out, label)
+		# get_structure_factor(labels.cpu().numpy()[0, 0])
+		loss = loss_func(opt, outs, labels)
 
 		optimizer.zero_grad()
 		loss.backward()
@@ -162,7 +245,7 @@ def single_val(opt, model, loader, loss_func, optimizer, scheduler):
 				images, labels = images.float().cuda(), labels.float().cuda()
 			outs, labels = unpad_input(opt, model(
 				images), labels, crop_sizes, 'val')
-			loss = loss_func(outs, labels).item()
+			loss = loss_func(opt, outs, labels).item()
 			_loss += loss
 			if opt.log:
 				wandb.log({'val_loss': loss})
@@ -211,8 +294,7 @@ def single_test(opt, model, loader, loss_func, optimizer, scheduler):
 		preds = preds[:, 0]
 		gts = gts[:, 0]
 		plots = np.random.choice(range(len(inputs)), opt.plot_num)
-		plt = plot_pairs(inputs[plots], preds[plots], gts[plots])
-		# wandb.log({"chart": plt})
+		plt = plot_pairs(opt, inputs[plots], preds[plots], gts[plots])
 
 
 # h5 later
@@ -221,8 +303,13 @@ class RegDataset(torch.utils.data.Dataset):
 		self.opt = opt
 		self.mode = mode
 		self.data = data
-		self.mean, self.std = self.data.reshape(
-			-1).mean(), self.data.reshape(-1).std()
+		assert opt.h5_time > 0 and opt.h5_time <= 9
+		self.h5_prev = h5py.File(opt.h5_path, "r")["time{}".format(opt.h5_time-1)]
+		self.h5_curr = h5py.File(opt.h5_path, "r")["time{}".format(opt.h5_time)]
+
+		if opt.data_norm:
+			self.mean, self.std = self.data.reshape(
+				-1).mean(), self.data.reshape(-1).std()
 
 		if mode == 'train' and self.opt.train_frac < 1.0:
 			self.data = self.data[np.random.choice(
@@ -235,8 +322,10 @@ class RegDataset(torch.utils.data.Dataset):
 		return len(self.data)
 
 	def __getitem__(self, idx):
-		curr = self.data[idx][0]
-		label = self.data[idx][1]
+		curr = self.h5_prev[self.data[idx]]
+		label = self.h5_curr[self.data[idx]]
+		curr = curr.reshape([1]+list(curr.shape))
+		label = label.reshape([1]+list(label.shape))
 
 		if self.opt.data_norm:
 			curr = (curr-self.mean)/self.std
@@ -274,8 +363,14 @@ class Conv3dCustom(torch.nn.Module):
 		self.out_feat = kwargs.get("out_feat", 3)
 		self.batch_norm = kwargs.get("batch_norm", True)
 		self.transpose = kwargs.get("transpose", False)
-		conv = torch.nn.Conv3d(self.in_feat, self.out_feat, self.kernel, stride=self.stride) if not self.transpose else torch.nn.ConvTranspose3d(
-			self.in_feat, self.out_feat, self.kernel, stride=self.stride)
+		self.use_bias = kwargs.get("use_bias", False)
+		self.padding = kwargs.get("padding", 0)
+		self.output_padding = kwargs.get("output_padding", 0)
+		if not self.transpose:
+			conv = torch.nn.Conv3d(self.in_feat, self.out_feat, self.kernel, stride=self.stride, padding='same' if self.stride==1 else self.padding, bias=self.use_bias) 
+		else: 
+			conv = torch.nn.ConvTranspose3d(self.in_feat, self.out_feat, self.kernel, stride=self.stride, padding='same' if self.stride==1 else self.padding, bias=self.use_bias, output_padding=self.output_padding)
+		
 		if self.batch_norm:
 			seq = torch.nn.Sequential(*[
 				conv,
@@ -306,15 +401,15 @@ class LeftModel(torch.nn.Module):
 		)
 		self.block2 = nn.Sequential(
 			Conv3dCustom(**dict(in_feat=64, out_feat=128, kernel=7,
-								stride=2, batch_norm=True, transpose=False)),
+								stride=2, batch_norm=True, transpose=False, padding=0)),
 			Conv3dCustom(**dict(in_feat=128, out_feat=64, kernel=7,
-								stride=2, batch_norm=True, transpose=False)),
+								stride=2, batch_norm=True, transpose=False, padding=0)),
 		)
 		self.block3 = nn.Sequential(
 			Conv3dCustom(**dict(in_feat=64, out_feat=64, kernel=7,
-								stride=2, batch_norm=True, transpose=True)),
+								stride=2, batch_norm=True, transpose=True, padding=0)),
 			Conv3dCustom(**dict(in_feat=64, out_feat=32, kernel=7,
-								stride=2, batch_norm=True, transpose=True)),
+								stride=2, batch_norm=True, transpose=True, padding=0, output_padding=1)),
 		)
 		self.block4 = nn.Sequential(
 			Conv3dCustom(**dict(in_feat=32, out_feat=128, kernel=7,
@@ -323,17 +418,17 @@ class LeftModel(torch.nn.Module):
 								stride=1, batch_norm=True, transpose=False)),
 		)
 		self.block5 = nn.Sequential(
-			Conv3dCustom(**dict(in_feat=64, out_feat=1, kernel=7, stride=1,
-								batch_norm=True, transpose=False)),
+			Conv3dCustom(**dict(in_feat=64, out_feat=1, kernel=1, stride=1,
+								batch_norm=False, transpose=False)),
 			torch.nn.BatchNorm3d(1),
-			nn.ConvTranspose3d(1, 1, kernel_size=7, stride=1),
+			nn.ConvTranspose3d(1, 1, kernel_size=1, stride=1, bias=True),
 			nn.Tanh()
 		)
 
 	def forward(self, inputs):
-		x = self.block1(inputs)
-		x = self.block2(x)
-		x = self.block3(x)
+		x = self.block1(inputs) # torch.Size([4, 64, 64, 64, 64])
+		x = self.block2(x) # torch.Size([4, 64, 12, 12, 12])
+		x = self.block3(x) # torch.Size([4, 32, 63, 63, 63])
 		x = self.block4(x)
 		x = self.block5(x)
 		return x
@@ -342,25 +437,19 @@ class LeftModel(torch.nn.Module):
 if __name__ == '__main__':
 	opt = get_parser()
 	if opt.log:
-		wandb.init(project="AIHack")
+		wandb.init(project="AIHack", name=opt.name)
 		wandb.config.update(opt)
 
-	data = np.loadtxt(opt.txt_path).transpose().reshape(-1, 1, 64, 64, 64)
-	data = np.array([data[i:i+2] for i in range(len(data)-1)])
-	data2 = [np.loadtxt(x).transpose().reshape(-1, 1, 64, 64, 64)
-			 for x in glob.glob('./dataset/addtional_data/*/density3d.txt')]
-	data2_pair = []
-	for d in data2:
-		for i in range(len(d)-1):
-			data2_pair.append(d[i:i+2])
-	data = np.concatenate((np.array(data2_pair), data), 0)
+	data = np.arange(opt.h5_size)
 
 	train, val, test = data_split(opt, data)
 
 	train_set, val_set, test_set = RegDataset(opt, train, 'train'), RegDataset(
 		opt, val, 'val'), RegDataset(opt, test, 'test')
-	val_set.mean, val_set.std = train_set.mean, train_set.std
-	test_set.mean, test_set.std = train_set.mean, train_set.std
+	if opt.data_norm:
+		val_set.mean, val_set.std = train_set.mean, train_set.std
+		test_set.mean, test_set.std = train_set.mean, train_set.std
+
 	train_loader, val_loader, test_loader = DataLoader(train_set, batch_size=opt.batch_size, shuffle=True, num_workers=opt.num_workers, drop_last=True), \
 		DataLoader(val_set, batch_size=opt.batch_size, shuffle=False, num_workers=opt.num_workers, drop_last=True), \
 		DataLoader(test_set, batch_size=opt.batch_size,
@@ -393,7 +482,8 @@ if __name__ == '__main__':
 			best_model_param = model.state_dict()
 			best_loss = val_loss
 
-		wandb.log({'epoch_loss': val_loss})
+		if opt.log:
+			wandb.log({'epoch_loss': val_loss})
 
 	model.load_state_dict(best_model_param)
-	single_test(opt, model, test_loader)
+	single_test(opt, model, test_loader, loss_func, optimizer, scheduler)
