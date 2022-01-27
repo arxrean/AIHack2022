@@ -53,10 +53,11 @@ def get_parser():
 						default=1248)
 	parser.add_argument('--h5_time', type=int,
 						default=5)
+	parser.add_argument('--h5_times', type=str, default='49')
 
 	# data
-	parser.add_argument('--train_test_ratio', type=float, default=0.04)
-	parser.add_argument('--train_val_ratio', type=float, default=0.1)
+	parser.add_argument('--train_test_ratio', type=float, default=0.02)
+	parser.add_argument('--train_val_ratio', type=float, default=0.03)
 	parser.add_argument('--train_frac', type=float, default=1.0)
 	parser.add_argument('--warm_up_split', type=int, default=5)
 	parser.add_argument('--img_size', type=int, default=64)
@@ -75,12 +76,14 @@ def get_parser():
 	parser.add_argument('--loss05', type=float, default=0)
 	parser.add_argument('--loss_peak', type=float, default=0)
 	parser.add_argument('--loss_len', type=float, default=0)
+	parser.add_argument('--time_weight', action='store_true')
 
 	# model
 	parser.add_argument('--backbone', type=str, default='resnet18')
 	parser.add_argument('--activation', type=str, default='empty')
 	parser.add_argument('--scope', type=float, default=2.5)
 	parser.add_argument('--unet_atten', action='store_true')
+	parser.add_argument('--cin', type=int, default=1)
 
 	opt = parser.parse_args()
 
@@ -147,7 +150,7 @@ def data_split(opt, data):
 
 
 def unpad_input(opt, outs, labels, crop_sizes, mode='train'):
-	if outs.shape == labels.shape:
+	if tuple(outs.shape[-3:]) == tuple(labels.shape[-3:]):
 		return outs, labels
 
 	if mode == 'train':
@@ -285,10 +288,12 @@ def single_train(opt, model, loader, loss_func, optimizer, scheduler):
 			images), labels, crop_sizes, 'train')
 		# get_structure_factor(labels.cpu().numpy()[0, 0])
 		loss_mse, loss05, loss_peak = loss_func(opt, outs, labels)
+		if opt.log:
+			wandb.log({'train_loss_mse': loss_mse.item()})
 		loss = loss_mse
-		if opt.loss05:
+		if opt.loss05 != 0:
 			loss += loss05
-		if opt.loss_peak:
+		if opt.loss_peak != 0:
 			loss += loss_peak
 
 		optimizer.zero_grad()
@@ -297,7 +302,6 @@ def single_train(opt, model, loader, loss_func, optimizer, scheduler):
 		scheduler.step()
 		if opt.log:
 			wandb.log({'train_loss': loss.item()})
-			wandb.log({'train_loss_mse': loss_mse.item()})
 			if opt.loss05: 
 				wandb.log({'train_loss05': loss05.item()})
 			if opt.loss_peak:
@@ -317,15 +321,16 @@ def single_val(opt, model, loader, loss_func, optimizer, scheduler):
 			outs, labels = unpad_input(opt, model(
 				images), labels, crop_sizes, 'val')
 			loss_mse, loss05, loss_peak = loss_func(opt, outs, labels)
+			if opt.log:
+				wandb.log({'train_loss_mse': loss_mse.item()})
 			loss = loss_mse
-			if opt.loss05:
+			if opt.loss05 != 0:
 				loss += loss05
-			if opt.loss_peak:
+			if opt.loss_peak != 0:
 				loss += loss_peak
 			_loss += loss.item()
 			if opt.log:
 				wandb.log({'val_loss': loss.item()})
-				wandb.log({'val_loss_mse': loss_mse.item()})
 				if opt.loss05: 
 					wandb.log({'val_loss05': loss05.item()})
 				if opt.loss_peak:
@@ -426,8 +431,8 @@ class RegDataset(torch.utils.data.Dataset):
 			label = np.pad(label, ((0, 0), (pad2, pad2), (pad2, pad2),
 								   (pad2, pad2)), 'constant')
 
-		curr = curr.reshape([1]+list(curr.shape))
-		label = label.reshape([1]+list(label.shape))
+		curr = np.expand_dims(curr, axis=0)
+		label = np.expand_dims(label, axis=0)
 		return curr, label, img_size
 
 
