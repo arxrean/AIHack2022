@@ -1,0 +1,2 @@
+#!/bin/bash
+python main_3d_mt.py --num_workers 0 --gpu --epoches 50 --pad_size 64 --batch_size 16 --cin 2 --h5_times 39 --aug --unet_atten --activation sigmoid --lr 1e-3 --loss05 0.5 --loss_peak 0.01 --log
