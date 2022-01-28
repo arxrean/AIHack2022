@@ -1,0 +1,12 @@
+fastai
+pytorch_lightning
+wandb
+transformers
+fast_ml
+h5py
+pandas
+scipy
+matplotlib
+seaborn
+ipython
+sklearn

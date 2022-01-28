@@ -1,2 +1,6 @@
 second_challenge/
 save/
+__pycache__/
+wandb/
+lightning_logs/
+dataset/
