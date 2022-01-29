@@ -1,3 +1,4 @@
 second_challenge/
 save/
-dataset/
+dataset
+__pycache__/
