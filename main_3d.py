@@ -63,7 +63,9 @@ def get_parser():
 	parser.add_argument('--img_size', type=int, default=64)
 	parser.add_argument('--pad_size', type=float, default=128)
 	parser.add_argument('--batches', type=int, default=32)
-	parser.add_argument('--tile', type=int, default=2)
+	parser.add_argument('--tile', type=int, default=1)
+	parser.add_argument('--test_samples', type=int, default=5) # -1 for all
+	parser.add_argument('--test_steps', type=int, default=100)
 	parser.add_argument('--data_norm', action='store_true')
 
 	# train

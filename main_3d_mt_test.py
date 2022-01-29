@@ -201,6 +201,10 @@ def tile(data, size=2):
 
 
 if __name__ == '__main__':
+    if not os.path.exists('./dataset/data.h5'):
+        print('get the data.h5 file and put it on ./dataset/data.h5')
+        raise
+
     opt = get_parser()
     if opt.log:
         wandb.init(project="AIHack", name=opt.name)
@@ -217,16 +221,15 @@ if __name__ == '__main__':
     if opt.gpu:
         model = model.cuda()
 
-    # qrfzmwbgpd/fibghhzwur/bnwtdjqkvi
-    best_model_param = torch.load('./save/models/fibghhzwur.pth')
+    best_model_param = torch.load('./save/models/qrfzmwbgpd.pth')
     model.load_state_dict(best_model_param)
+    model = model.eval()
     single_test(opt, model, test_loader, None, None, None)
 
-    model = model.eval()
     preds = []
     with torch.no_grad():
         for step, pack in enumerate(test_loader):
-            if step == 5:
+            if opt.test_samples > 0 and step == opt.test_samples:
                 break
             pred = []
             outs, labels, crop_sizes, times = pack
@@ -234,14 +237,16 @@ if __name__ == '__main__':
                 outs = tile(outs[0], opt.tile).unsqueeze(0)
             if opt.gpu:
                 outs = outs.float().cuda()
-            for _ in range(100):
+            for _ in range(opt.test_steps):
                 _outs = model(outs)
                 pred.append(_outs.squeeze(1).cpu().numpy())
                 outs = torch.stack((outs[0][1], _outs[0][0])).unsqueeze(0)
             pred = np.concatenate(pred, 0)
             preds.append(pred)
     preds = np.stack(preds).transpose((1, 0, 2, 3, 4))
-    filename = './save/results/fibghhzwur'
+    filename = './save/results/qrfzmwbgpd'
+    if not os.path.exists(filename):
+        os.makedirs(filename)
 
     if opt.tile >= 2:
         filename += '_tile'
