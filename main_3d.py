@@ -53,7 +53,7 @@ def get_parser():
 						default=1248)
 	parser.add_argument('--h5_time', type=int,
 						default=5)
-	parser.add_argument('--h5_times', type=str, default='49')
+	parser.add_argument('--h5_times', type=str, default='39')
 
 	# data
 	parser.add_argument('--train_test_ratio', type=float, default=0.02)
@@ -63,11 +63,12 @@ def get_parser():
 	parser.add_argument('--img_size', type=int, default=64)
 	parser.add_argument('--pad_size', type=float, default=128)
 	parser.add_argument('--batches', type=int, default=32)
+	parser.add_argument('--tile', type=int, default=2)
 	parser.add_argument('--data_norm', action='store_true')
 
 	# train
 	parser.add_argument('--epoches', type=int, default=10)
-	parser.add_argument('--batch_size', type=int, default=4)
+	parser.add_argument('--batch_size', type=int, default=32)
 	parser.add_argument('--num_workers', type=int, default=4)
 	parser.add_argument('--lr', type=float, default=1e-4)
 	parser.add_argument('--weight_decay', type=float, default=2e-5)
@@ -80,10 +81,10 @@ def get_parser():
 
 	# model
 	parser.add_argument('--backbone', type=str, default='resnet18')
-	parser.add_argument('--activation', type=str, default='empty')
+	parser.add_argument('--activation', type=str, default='sigmoid')
 	parser.add_argument('--scope', type=float, default=2.5)
 	parser.add_argument('--unet_atten', action='store_true')
-	parser.add_argument('--cin', type=int, default=1)
+	parser.add_argument('--cin', type=int, default=2)
 
 	opt = parser.parse_args()
 
@@ -145,6 +146,8 @@ def data_split(opt, data):
 	train, test = train_test_split(
 		data, test_size=opt.train_test_ratio, random_state=42)
 	train, val = train_test_split(train, test_size=opt.train_val_ratio, random_state=42)
+	if opt.train_frac < 1:
+		_, train = train_test_split(train, test_size=opt.train_frac, random_state=42)
 
 	return train, val, test
 

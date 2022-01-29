@@ -31,7 +31,6 @@ import torch.nn.functional as F
 import torch.optim as optim
 import torch.nn as nn
 import torch
-import torch.fft
 import torchvision
 from transformers import BertTokenizerFast as BertTokenizer, BertModel, AdamW, get_linear_schedule_with_warmup
 
@@ -183,7 +182,7 @@ def single_test(opt, model, loader, loss_func, optimizer, scheduler):
     mae = mean_absolute_error(gts.reshape(-1), preds.reshape(-1))
     r2 = r2_score(gts.reshape(-1), preds.reshape(-1))
 
-    print('MSE: {:.4f} RMSE: {:.4f} MAE: {:.4f} R2: {:.4f}'.format(mse, rmse, mae, r2))
+    print('MSE: {} RMSE: {} MAE: {} R2: {}'.format(mse, rmse, mae, r2))
 
     if opt.log:
         wandb.config.update({'mse': mse, 'rmse': rmse, 'mae': mae, 'r2': r2})
@@ -196,54 +195,58 @@ def single_test(opt, model, loader, loss_func, optimizer, scheduler):
         plt = plot_pairs(opt, inputs[plots], preds[plots], gts[plots])
 
 
+def tile(data, size=2):
+
+    return data.repeat(1, *([size]*3))
+
+
 if __name__ == '__main__':
     opt = get_parser()
     if opt.log:
         wandb.init(project="AIHack", name=opt.name)
         wandb.config.update(opt)
 
-    print('--weight_decay {} --loss05 {} --loss_peak {}'.format(opt.weight_decay, opt.loss05, opt.loss_peak))
-
     data = np.arange(opt.h5_size*(int(opt.h5_times[1])-int(opt.h5_times[0])+1))
 
-    train, val, test = data_split(opt, data)
+    _, _, test = data_split(opt, data)
 
-    train_set, val_set, test_set = RegDataset(opt, train, 'train'), RegDataset(
-        opt, val, 'val'), RegDataset(opt, test, 'test')
-    if opt.data_norm:
-        val_set.mean, val_set.std = train_set.mean, train_set.std
-        test_set.mean, test_set.std = train_set.mean, train_set.std
-    train_loader, val_loader, test_loader = DataLoader(train_set, batch_size=opt.batch_size, shuffle=True, num_workers=opt.num_workers, drop_last=True), \
-        DataLoader(val_set, batch_size=opt.batch_size, shuffle=False, num_workers=opt.num_workers, drop_last=True), \
-        DataLoader(test_set, batch_size=opt.batch_size,
-                   shuffle=False, num_workers=opt.num_workers)
+    test_set = RegDataset(opt, test, 'test')
+    test_loader = DataLoader(test_set, batch_size=1, shuffle=False, num_workers=opt.num_workers)
 
     model = UNet(opt, attention=opt.unet_atten, in_channels=opt.cin)
     if opt.gpu:
         model = model.cuda()
 
-    optimizer = AdamW(model.parameters(), lr=opt.lr,
-                       weight_decay=opt.weight_decay)
-
-    total_training_steps = len(train_loader) * opt.epoches
-    warmup_steps = total_training_steps // opt.warm_up_split
-    scheduler = get_linear_schedule_with_warmup(
-        optimizer,
-        num_warmup_steps=warmup_steps,
-        num_training_steps=total_training_steps
-    )
-
-    best_model_param, best_loss = None, 1e5
-    for epoch in range(opt.epoches):
-        model = single_train(opt, model, train_loader, get_loss_func, optimizer, scheduler)
-        val_loss = single_val(opt, model, val_loader, get_loss_func, optimizer, scheduler)
-        if val_loss < best_loss:
-            best_model_param = model.state_dict()
-            best_loss = val_loss
-        if opt.log:
-            wandb.log({'epoch_loss': val_loss})
-
+    # qrfzmwbgpd/fibghhzwur/bnwtdjqkvi
+    best_model_param = torch.load('./save/models/fibghhzwur.pth')
     model.load_state_dict(best_model_param)
-    single_test(opt, model, test_loader, get_loss_func, optimizer, scheduler)
-    if opt.log:
-        torch.save(model.cpu().state_dict(), os.path.join(wandb.run.dir, "{}.h5".format(opt.name)))
+    single_test(opt, model, test_loader, None, None, None)
+
+    model = model.eval()
+    preds = []
+    with torch.no_grad():
+        for step, pack in enumerate(test_loader):
+            if step == 5:
+                break
+            pred = []
+            outs, labels, crop_sizes, times = pack
+            if opt.tile >= 2:
+                outs = tile(outs[0], opt.tile).unsqueeze(0)
+            if opt.gpu:
+                outs = outs.float().cuda()
+            for _ in range(100):
+                _outs = model(outs)
+                pred.append(_outs.squeeze(1).cpu().numpy())
+                outs = torch.stack((outs[0][1], _outs[0][0])).unsqueeze(0)
+            pred = np.concatenate(pred, 0)
+            preds.append(pred)
+    preds = np.stack(preds).transpose((1, 0, 2, 3, 4))
+    filename = './save/results/fibghhzwur'
+
+    if opt.tile >= 2:
+        filename += '_tile'
+    filename += '.h5'
+    hf = h5py.File(filename, 'w')
+    for i in range(len(preds)):
+        hf.create_dataset('time{}'.format(i), data=preds[i])
+    hf.close()
