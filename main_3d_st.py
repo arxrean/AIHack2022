@@ -201,6 +201,7 @@ if __name__ == '__main__':
 
     start_t, end_t = int(opt.h5_times[0]), int(opt.h5_times[1])
     for t in range(start_t, end_t+1):
+        print('time step: {}'.format(t))
         data = np.arange(opt.h5_size*(end_t-start_t+1))
         train, val, test = data_split(opt, data)
         train = train[(train >= (t-start_t)*opt.h5_size)&(train < (t-start_t+1)*opt.h5_size)]
