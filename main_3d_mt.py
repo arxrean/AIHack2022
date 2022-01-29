@@ -246,4 +246,4 @@ if __name__ == '__main__':
     model.load_state_dict(best_model_param)
     single_test(opt, model, test_loader, get_loss_func, optimizer, scheduler)
     if opt.log:
-        torch.save(model.cpu().state_dict(), os.path.join(wandb.run.dir, "{}.h5".format(opt.name)))
+        torch.save(model.cpu().state_dict(), os.path.join(wandb.run.dir, "{}.pth".format(opt.name)))
