@@ -9,6 +9,7 @@ import string
 import argparse
 import pandas as pd
 import numpy as np
+from tqdm import tqdm
 from scipy.special import softmax
 from PIL import Image
 import matplotlib.pyplot as plt
@@ -200,8 +201,7 @@ if __name__ == '__main__':
         wandb.config.update(opt)
 
     start_t, end_t = int(opt.h5_times[0]), int(opt.h5_times[1])
-    for t in range(start_t, end_t+1):
-        print('time step: {}'.format(t))
+    for t in tqdm(range(start_t, end_t+1)):
         data = np.arange(opt.h5_size*(end_t-start_t+1))
         train, val, test = data_split(opt, data)
         train = train[(train >= (t-start_t)*opt.h5_size)&(train < (t-start_t+1)*opt.h5_size)]

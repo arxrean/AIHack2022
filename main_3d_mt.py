@@ -9,6 +9,7 @@ import string
 import argparse
 import pandas as pd
 import numpy as np
+from tqdm import tqdm
 from scipy.special import softmax
 from PIL import Image
 import matplotlib.pyplot as plt
@@ -55,9 +56,6 @@ class RegDataset(torch.utils.data.Dataset):
         if mode == 'train' and self.opt.train_frac < 1.0:
             self.data = self.data[np.random.choice(
                 len(self.data), int(len(self.data)*self.opt.train_frac))]
-
-        if self.opt.log:
-            wandb.config.update({self.mode: len(self.data)})
 
     def __len__(self):
         return len(self.data)

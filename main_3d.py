@@ -406,9 +406,6 @@ class RegDataset(torch.utils.data.Dataset):
 			self.data = self.data[np.random.choice(
 				len(self.data), int(len(self.data)*self.opt.train_frac))]
 
-		if self.opt.log:
-			wandb.config.update({self.mode: len(self.data)})
-
 	def __len__(self):
 		return len(self.data)
 
