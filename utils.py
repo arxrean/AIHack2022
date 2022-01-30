@@ -150,7 +150,8 @@ def plot_time_evolution(filename, index, keys, ranges, name="time.pdf"):
     return times, volumes, xis
 
 
-def difference(data: "h5py read file", absl=False):
+def difference(filename: "h5py read file name", absl=False):
+    data = h5py.File(f"{filename}", "r")
     assert isinstance(data, (h5py.File, np.ndarray)), "wrong data type..."
     keys = sorted(list(f.keys()), key=lambda key: int(key.split("time")[-1]))
     sample_counts = data[keys[0]].shape[0] #scalar, how many samples?
