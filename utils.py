@@ -71,7 +71,7 @@ def get_correlation_length(q, sq, ax, plot_name=None):
     xis = []
     rs = []
     grs = []
-    
+    decays = []
     for idx in range(len(sqs)):
         sq = sqs[idx]
         gr = np.fft.irfft(sq)
@@ -93,18 +93,25 @@ def get_correlation_length(q, sq, ax, plot_name=None):
         ax.set_ylabel("$g(r)$ [arb. units]")
 
 ##        ax.plot(r, gr, "o", label="data")
-        ax.plot(r[max_idx], gr[max_idx], "o", label="max.")
-        ax.plot(r, exp_decay(r, *popt), label="fit")
+        ax.plot(r[max_idx], gr[max_idx], "o", label="max.", c=plt.cm.get_cmap("jet")(idx*3))
+        decays.append(exp_decay(r, *popt))
+##        ax.plot(r, exp_decay(r, *popt), label="fit")
+        
     rs = np.array(rs)
     grs = np.array(grs)
     ax.errorbar(rs.mean(axis=0), grs.mean(axis=0), yerr=grs.std(axis=0))
-
+    decays = np.array(decays)
+    ax.errorbar(r, decays.mean(axis=0), yerr=decays.std(axis=0))
+    
+##    ax.set_xscale("log", base=2)
+##    ax.set_yscale("log", base=2)
+    
 ##        ax.legend(loc="best")
 
 ##        fig.savefig(plot_name, transparent=True, bbox_inches='tight', pad_inches=0)
-##        plt.close(fig)
-    return popt[1]
-
+##        plt.close(fig) 
+##    return popt[1]
+    return xis
 
 def get_volume_fraction(data):
     return data.mean()
@@ -115,7 +122,7 @@ def plot_time_evolution(filename, index, keys, ranges, name="time.pdf"):
     volumes = []
     qs = []
     sqs = []
-    fig, ax = plt.subplots(2,2, figsize=(12,12))
+    fig, ax = plt.subplots(2,2, figsize=(11,11))
     for time in range(0, len(keys)):
         img = get_one_image(filename, time, index, ranges)
         q, sq = get_structure_factor(img, )
@@ -131,7 +138,7 @@ def plot_time_evolution(filename, index, keys, ranges, name="time.pdf"):
         sqs.append(sq)
     xis = get_correlation_length(qs, sqs, ax.flatten()[2])
     plot_sq(qs, sqs, ax.flatten()[3])
-
+    print(xis)
     
 ##    fig, ax = plt.subplots()
     ax0 = ax.flatten()[0]
@@ -150,8 +157,7 @@ def plot_time_evolution(filename, index, keys, ranges, name="time.pdf"):
     return times, volumes, xis
 
 
-def difference(filename: "h5py read file name", absl=False):
-    data = h5py.File(f"{filename}", "r")
+def difference(data: "h5py read file", absl=False):
     assert isinstance(data, (h5py.File, np.ndarray)), "wrong data type..."
     keys = sorted(list(f.keys()), key=lambda key: int(key.split("time")[-1]))
     sample_counts = data[keys[0]].shape[0] #scalar, how many samples?
