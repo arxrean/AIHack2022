@@ -142,9 +142,9 @@ def single_val(opt, model, loader, loss_func, optimizer, scheduler):
             _loss += loss.item()
             if opt.log:
                 wandb.log({'val_loss': loss.item()})
-                if opt.loss05: 
+                if opt.loss05 != 0: 
                     wandb.log({'val_loss05': loss05.item()})
-                if opt.loss_peak:
+                if opt.loss_peak != 0:
                     wandb.log({'val_loss_peak': loss_peak.item()})
 
     return _loss/len(loader)

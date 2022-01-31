@@ -221,8 +221,8 @@ if __name__ == '__main__':
     if opt.gpu:
         model = model.cuda()
 
-    # qrfzmwbgpd(alldata)/zqbsjtcwbe(stepbystep)
-    best_model_param = torch.load('./save/models/zqbsjtcwbe.pth')
+    # qrfzmwbgpd(alldata)/zesqkfdhva(alldata2)/sgippqckld(alldata3)
+    best_model_param = torch.load('./save/models/qrfzmwbgpd.pth')
     model.load_state_dict(best_model_param)
     model = model.eval()
     single_test(opt, model, test_loader, None, None, None)
@@ -247,7 +247,7 @@ if __name__ == '__main__':
     preds = np.stack(preds).transpose((1, 0, 2, 3, 4))
     if not os.path.exists('./save/results/'):
         os,makedirs('./save/results/')
-    filename = './save/results/zqbsjtcwbe'
+    filename = './save/results/qrfzmwbgpd'
 
     if opt.tile >= 2:
         filename += '_tile'
