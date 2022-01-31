@@ -13,7 +13,7 @@ python main_3d_mt_test.py --num_workers 0 --gpu --epoches 50 --pad_size 64 --bat
 ```
 
 To generate some of the physical correctness figures, run utils.py.
-In order to do so, change roots in <if __name__=="__main__"> to locate generated data produced from main_3d_mt_test.py (above code) and then run the following.
+In order to do so, change roots in <if __name__=="__main__"> to the user specified directory. Then create a folder named "results" where generated data produced from main_3d_mt_test.py (above code) is saved. Finally, run the following.
   
 ```shell
 python utils.py  
