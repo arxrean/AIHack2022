@@ -1,5 +1,6 @@
 #!/usr/bin/python
 # coding=utf-8
+"""https://github.com/metrofun/E3D-LSTM"""
 
 from functools import reduce
 #from utils import nice_print, mem_report, cpu_stats
@@ -206,7 +207,7 @@ class Decoder3d(nn.Module):
         return self.conv3d(input)
         # return F.interpolate(self.conv3d(input), size=input.shape[-3:], mode="trilinear")
 
-input_shape = (3, 64, 64, 64)
+input_shape = (1, 64, 64, 64)
 tau = 2
 hidden_size = 16
 kernel = 5
@@ -231,7 +232,6 @@ class Model(torch.nn.Module):
 if __name__ == '__main__':
         opt = get_parser()
         if opt.log:  
-                wandb.login(key="f5582e0e72ff93ad157b67983b0c29b4dc40d4d7")
                 wandb.init(project="AIHack", name=opt.name)
                 wandb.config.update(opt)
 
