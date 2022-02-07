@@ -1,6 +1,6 @@
 # Introduction
 This is the code implementation of our solution for the second challenge of AI Hackthon hold by Argonne National Laboratory. Our team members are [Hyun Park](https://www.linkedin.com/in/hyun-park-08196a148/), [Boyuan Yu](https://www.linkedin.com/in/boyuan-yu-92940b196/), [Ziyi Kou](https://ziyikou.me/) and [Ajay Uppili Arasanipalai](https://www.linkedin.com/in/ajayuppili). We show the results of our model below.
-![Alt Text](https://res.cloudinary.com/dhortnuos/image/upload/v1644197332/test1_g49sue.gif)
+![Alt Text](test1.gif)
 
 # Method
 We used UNet model as our main network structure and MSE loss as the major loss. We then developed two other loss functions to further regulate the optimization process as follows. 
