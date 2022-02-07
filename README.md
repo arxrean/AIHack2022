@@ -6,11 +6,11 @@ This is the code implementation of our solution for the second challenge of AI H
 We used UNet model as our main network structure and MSE loss as the major loss. We then developed two other loss functions to further regulate the optimization process as follows. 
 1. Fraction Volume Loss
 $$
-\mathcal{L}_1=|0.5-\bar{x}|,\bar{x}=\text{Average}(\sum_{i,j,k}x_{i,j,k})
+![](e1.png)
 $$
 2. Peak Loss
 $$
-\mathcal{L}_2=|\text{argmax}(X)-\text{argmax}(Y)|,X=\{x_i\},Y=\{y_i\},0\leq i<N
+![](e2.png)
 $$
 
 We implemented several data augmentation strategies to improve the robustness of our model as follows.
