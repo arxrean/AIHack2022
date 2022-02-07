@@ -5,9 +5,9 @@ This is the code implementation of our solution for the second challenge of AI H
 # Method
 We used UNet model as our main network structure and MSE loss as the major loss. We then developed two other loss functions to further regulate the optimization process as follows. 
 1. Fraction Volume Loss
-![](e1.png)
+<img src="https://bit.ly/34mEmRQ" align="center" border="0" alt="\mathcal{L}_1=|0.5-\bar{x}|,\bar{x}=\text{Average}(\sum_{i,j,k}x_{i,j,k})" width="297" height="44" />
 2. Peak Loss
-![](e2.png)
+<img src="https://bit.ly/3ssqHAS" align="center" border="0" alt="\mathcal{L}_2=|\text{argmax}(X)-\text{argmax}(Y)|,X=\{x_i\},Y=\{y_i\},0\leq i<N" width="494" height="19" />
 
 We implemented several data augmentation strategies to improve the robustness of our model as follows.
 * Random flip for inputs.
