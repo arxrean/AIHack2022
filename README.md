@@ -1,5 +1,5 @@
 # Introduction
-This is the code implementation of our solution for the second challenge of AI Hackthon hosted by Argonne National Laboratory. Our team members are [Hyun Park](https://www.linkedin.com/in/hyun-park-08196a148/), [Boyuan Yu](https://www.linkedin.com/in/boyuan-yu-92940b196/), [Ziyi Kou](https://ziyikou.me/) and [Ajay Uppili Arasanipalai](https://www.linkedin.com/in/ajayuppili). We won the challenge! We show the results of our model below.
+This is the code implementation of our solution for the second challenge of AI Hackthon (Molecular Dynamics) hosted by Argonne National Laboratory. Our team members are [Hyun Park](https://www.linkedin.com/in/hyun-park-08196a148/), [Boyuan Yu](https://www.linkedin.com/in/boyuan-yu-92940b196/), [Ziyi Kou](https://ziyikou.me/) and [Ajay Uppili Arasanipalai](https://www.linkedin.com/in/ajayuppili). We won the challenge! We show the results of our model below.
 ![Alt Text](test1.gif)
 
 # Method
